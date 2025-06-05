@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> chart Visualizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas2svg@1.0.16/dist/canvas2svg.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --primary-hover: #2980b9;
+            --secondary-color: #2ecc71;
+            --light-bg: #f8f9fa;
+            --dark-bg: #000000; 
+            --text-color: #333333; 
+            --light-text: #f8f9fa;
+            --border-color: #dee2e6;
+            --white-bg: #ffffff;
+        }
+        
+        *{ box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--light-bg);
+            padding: 20px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        body.dark-theme {
+            --light-bg: #000000;
+            --white-bg: #0a0a0a;
+            --text-color: #00ccff; 
+            --border-color: #333333;
+            --primary-color: #00aaff;
+        }
+        
+        body.fullscreen-active { overflow: hidden; }
+        .container { max-width: 1200px;
+             margin: 0 auto; 
+             padding: 20px; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color); }
+        h1 { color: var(--primary-color); font-size: 2.5rem; }
+        .app-container { display: grid; grid-template-columns: 1fr 3fr; gap: 20px; }
+        @media (max-width: 768px) { .app-container { grid-template-columns: 1fr; } }
+        .sidebar, .main-content { background-color: var(--white-bg); border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        body.dark-theme .sidebar, body.dark-theme .main-content { box-shadow: 0 2px 8px rgba(200,200,255,0.05); border: 1px solid var(--border-color); }
+        .upload-container { border: 2px dashed var(--border-color); border-radius: 8px; padding: 40px 20px; text-align: center; cursor: pointer; margin-bottom: 20px; transition: border-color 0.3s; }
+        .upload-container:hover { border-color: var(--primary-color); }
+        .upload-container.drag-over { border-color: var(--secondary-color); background-color: rgba(46, 204, 113, 0.1); }
+        .upload-icon { font-size: 48px; color: var(--primary-color); margin-bottom: 15px; }
+        .btn { display: inline-block; background-color: var(--primary-color); color: var(--white-bg); padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background-color 0.3s; text-decoration: none; }
+        body.dark-theme .btn { color: #000000; }
+        .btn:hover { background-color: var(--primary-hover); }
+        .btn-secondary { background-color: var(--secondary-color); }
+        .btn-secondary:hover { background-color: #27ae60; }
+        .btn-small { padding: 5px 10px; font-size: 12px; }
+        .file-info { margin: 20px 0; padding: 15px; background-color: var(--light-bg); border-radius: 8px; display: none; }
+        .charts-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; margin-top: 20px; }
+        .chart-card { background-color: var(--white-bg); border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); padding: 20px; position: relative; display: flex; flex-direction: column; }
+        body.dark-theme .chart-card { border: 1px solid var(--border-color); }
+        .chart-card.fullscreen-mode { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10000; padding: 30px; overflow-y: auto; }
+        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-shrink: 0; }
+        .chart-title { font-size: 18px; font-weight: 600; }
+        .chart-controls { display: flex; gap: 10px; }
+        .chart-container { height: 300px; position: relative; flex-grow: 1; }
+        .chart-card.fullscreen-mode .chart-container { height: calc(100% - 80px); }
+        .data-table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+        .data-table th, .data-table td { border: 1px solid var(--border-color); padding: 8px 12px; text-align: left; }
+        .data-table th { background-color: var(--light-bg); font-weight: 600; }
+        body.dark-theme .data-table th { color: var(--text-color); } /* Ensure header text matches theme */
+        .data-table tbody tr:nth-child(even) { background-color: var(--light-bg); }
+        .loading { display: none; text-align: center; margin: 20px 0; }
+        .loading-spinner { border: 4px solid rgba(200, 200, 200, 0.2); border-left-color: var(--primary-color); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .export-btn { background-color: #6c757d; }
+        .export-btn:hover { background-color: #5a6268; }
+        .fullscreen-btn { background-color: #007bff; }
+        .fullscreen-btn:hover { background-color: #0056b3; }
+        .chart-explanation { margin-top: 15px; font-size: 14px; color: #8899a6; font-style: italic; flex-shrink: 0; }
+        body.dark-theme .chart-explanation { color: #718096; }
+        .error-message { color: #dc3545; background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 10px; border-radius: 4px; margin: 10px 0; display: none; }
+        body.dark-theme .error-message { color: #ffdddd; background-color: #5d2222; border: 1px solid #aa5555; }
+        .sidebar label { display: block; margin-bottom: 5px; font-weight: 500; }
+        .sidebar select, .sidebar input[type="text"], .sidebar input[type="number"] {
+            width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid var(--border-color); border-radius: 4px;
+            background-color: var(--white-bg); color: var(--text-color);
+        }
+        body.dark-theme .sidebar select, body.dark-theme .sidebar input[type="text"], body.dark-theme .sidebar input[type="number"] {
+             background-color: var(--dark-bg); color: var(--light-text); border-color: #444;
+        }
+        .custom-chart-controls div { margin-bottom: 15px;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>FileDash - Generic CSV Visualizer</h1>
+            <div>
+                <button id="theme-toggle" class="btn">Dark Mode</button>
+            </div>
+        </header>
+        
+        <div class="app-container">
+            <div class="sidebar">
+                <h2>Data Source</h2>
+                <div id="upload-container" class="upload-container">
+                    <div class="upload-icon">📊</div>
+                    <p>Drag & drop CSV file here or</p>
+                    <button id="file-select-btn" class="btn">Select File</button>
+                    <input type="file" id="file-input" accept=".csv,text/csv" style="display: none;">
+                </div>
+                <div id="file-info" class="file-info">
+                    <h3>File Information</h3>
+                    <p id="file-name"></p>
+                    <p id="file-size"></p>
+                    <p id="row-count"></p>
+                    <p id="column-count"></p>
+                </div>
+                <div id="analysis-actions" style="margin-top: 20px; display: none;">
+                    <h3>Chart Generation</h3>
+                    <button id="generate-charts-btn" class="btn btn-secondary" style="margin-top: 10px; width: 100%;">Generate Auto Charts</button>
+                
+                    <h3 style="margin-top: 30px; margin-bottom: 15px;">Custom Chart Creator</h3>
+                    <div class="custom-chart-controls">
+                        <div>
+                            <label for="custom-chart-type">Chart Type:</label>
+                            <select id="custom-chart-type">
+                                <option value="bar">Bar Chart</option>
+                                <option value="line">Line Chart</option>
+                                <option value="scatter">Scatter Plot</option>
+                                <option value="pie">Pie Chart</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="custom-x-axis" id="custom-x-axis-label">X-Axis / Dimension (for Pie):</label>
+                            <select id="custom-x-axis"></select>
+                        </div>
+                        <div>
+                            <label for="custom-y-axis" id="custom-y-axis-label">Y-Axis / Metric (for Pie):</label>
+                            <select id="custom-y-axis"></select>
+                        </div>
+                        <div id="aggregation-control" style="display: none;">
+                            <label for="custom-aggregation">Aggregation (for Y-Axis):</label>
+                            <select id="custom-aggregation">
+                                <option value="sum">Sum</option>
+                                <option value="average">Average</option>
+                                <option value="count">Count (of X-axis categories)</option>
+                            </select>
+                        </div>
+                        <button id="create-custom-chart-btn" class="btn" style="width:100%;">Create Custom Chart</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="main-content">
+                <div id="loading" class="loading">
+                    <div class="loading-spinner"></div>
+                    <p>Analyzing data and generating charts...</p>
+                </div>
+                <div id="error-message" class="error-message"></div>
+                <div id="data-preview-container" style="display: none;">
+                    <h2>Data Preview (First 5 Rows)</h2>
+                    <div style="overflow-x: auto;">
+                        <table id="data-preview" class="data-table"></table>
+                    </div>
+                </div>
+                <div id="charts-container" class="charts-container"></div>
+            </div>
+        </div>
+    </div>
+        
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const fileSelectBtn = document.getElementById('file-select-btn');
+        const uploadContainer = document.getElementById('upload-container');
+        const fileInfo = document.getElementById('file-info');
+        const fileNameEl = document.getElementById('file-name');
+        const fileSizeEl = document.getElementById('file-size');
+        const rowCountEl = document.getElementById('row-count');
+        const columnCountEl = document.getElementById('column-count');
+        const dataPreviewContainer = document.getElementById('data-preview-container');
+        const dataPreviewTable = document.getElementById('data-preview');
+        const analysisActionsEl = document.getElementById('analysis-actions'); // Renamed from chartOptionsEl
+        const generateChartsBtn = document.getElementById('generate-charts-btn');
+        const chartsContainer = document.getElementById('charts-container');
+        const loadingEl = document.getElementById('loading');
+        const errorMessageEl = document.getElementById('error-message');
+        const themeToggle = document.getElementById('theme-toggle');
+
+        // Custom Chart Controls
+        const customChartTypeSelect = document.getElementById('custom-chart-type');
+        const customXAxisSelect = document.getElementById('custom-x-axis');
+        const customYAxisSelect = document.getElementById('custom-y-axis');
+        const customAggregationSelect = document.getElementById('custom-aggregation');
+        const aggregationControlDiv = document.getElementById('aggregation-control');
+        const createCustomChartBtn = document.getElementById('create-custom-chart-btn');
+        const customXAxisLabel = document.getElementById('custom-x-axis-label');
+        const customYAxisLabel = document.getElementById('custom-y-axis-label');
+        
+        let parsedData = null;
+        let originalHeaders = []; 
+        let columnAnalysis = {};
+        let activeCharts = []; 
+        
+        fileSelectBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => e.target.files[0] && processFile(e.target.files[0]));
+        uploadContainer.addEventListener('dragover', (e) => { e.preventDefault(); uploadContainer.classList.add('drag-over'); });
+        uploadContainer.addEventListener('dragleave', (e) => { e.preventDefault(); uploadContainer.classList.remove('drag-over'); });
+        uploadContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadContainer.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file && (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv'))) {
+                processFile(file);
+            } else {
+                showError('Please upload a CSV file.');
+            }
+        });
+        generateChartsBtn.addEventListener('click', generateAndDisplaySuggestedCharts); 
+        themeToggle.addEventListener('click', toggleTheme);
+        
+        customChartTypeSelect.addEventListener('change', updateCustomChartControlsUI);
+        customAggregationSelect.addEventListener('change', updateCustomChartControlsUI);
+        createCustomChartBtn.addEventListener('click', handleCreateCustomChart);
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                const fsCard = document.querySelector('.chart-card.fullscreen-mode');
+                fsCard && toggleChartFullscreen(fsCard.dataset.chartInstanceId, false);
+            }
+        });
+
+        function processFile(file) {
+            clearPreviousState();
+            fileNameEl.textContent = `File: ${file.name}`;
+            fileSizeEl.textContent = `Size: ${formatFileSize(file.size)}`;
+            fileInfo.style.display = 'block';
+
+            Papa.parse(file, {
+                header: true, dynamicTyping: true, skipEmptyLines: 'greedy',
+                transformHeader: header => header.trim(),
+                complete: (results) => {
+                    if (results.errors.length) {
+                        showError(`Error parsing CSV: ${results.errors[0].message}. Row: ${results.errors[0].row + 1}`);
+                        return;
+                    }
+                    if (!results.data || !results.data.length) {
+                        showError("No data rows found in CSV."); return;
+                    }
+                    if (!results.meta.fields || !results.meta.fields.length) {
+                        showError("Could not determine column headers."); return;
+                    }
+                    
+                    originalHeaders = results.meta.fields.filter(h => h && h.trim() !== '');
+                    parsedData = results.data; 
+                    
+                    columnAnalysis = analyzeColumnDataTypes(parsedData, originalHeaders);
+                    
+                    parsedData = parsedData.map(row => {
+                        const newRow = {...row};
+                        originalHeaders.forEach(header => {
+                            if (columnAnalysis[header]?.type === 'date' && !(newRow[header] instanceof Date) && newRow[header] != null) {
+                                const d = new Date(newRow[header]);
+                                if (!isNaN(d.getTime())) newRow[header] = d;
+                                else newRow[header] = null; // Invalid date
+                            } else if (columnAnalysis[header]?.type === 'number' && typeof newRow[header] === 'string') {
+                                const num = parseFloat(newRow[header]);
+                                if (!isNaN(num)) newRow[header] = num;
+                            }
+                        });
+                        return newRow;
+                    });
+                    
+                    rowCountEl.textContent = `Rows: ${parsedData.length}`;
+                    columnCountEl.textContent = `Columns: ${originalHeaders.length}`;
+                    displayDataPreview(parsedData, originalHeaders);
+                    populateCustomChartSelectors(); // Populate dropdowns for custom charts
+                    analysisActionsEl.style.display = 'block'; // Show analysis and custom chart section
+                },
+                error: (error) => showError(`File read error: ${error.message}`)
+            });
+        }
+
+        function analyzeColumnDataTypes(data, headers, sampleSize = 100) {
+            const analysis = {};
+            const sample = data.slice(0, sampleSize);
+
+            headers.forEach(header => {
+                let types = { string: 0, number: 0, boolean: 0, date: 0, empty: 0 };
+                let uniqueValues = new Set();
+                
+                sample.forEach(row => {
+                    const value = row[header];
+                    if (value === null || value === undefined || String(value).trim() === "") {
+                        types.empty++;
+                        return;
+                    }
+                    uniqueValues.add(value);
+
+                    if (value instanceof Date && !isNaN(value.getTime())) types.date++;
+                    else if (typeof value === 'number' && !isNaN(value)) types.number++;
+                    else if (typeof value === 'boolean') types.boolean++;
+                    else if (typeof value === 'string') {
+                        types.string++;
+                        if (!isNaN(new Date(value).getTime()) && value.match(/\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4}/)) { // crude date string check
+                            types.date++; 
+                        }
+                    }
+                });
+
+                let detectedType = 'string'; 
+                if (types.date > 0 && types.date >= types.number && types.date >= types.string * 0.5) detectedType = 'date';
+                else if (types.number > 0 && types.number >= types.string * 0.5) detectedType = 'number';
+                else if (types.boolean > 0 && types.boolean >= types.string * 0.5) detectedType = 'boolean';
+                else if (uniqueValues.size <= 15 && sample.length > 10 && types.string > 0 && uniqueValues.size / sample.length < 0.5) detectedType = 'category'; 
+                else if (types.string > 0) detectedType = 'string';
+                else if (types.empty === sample.length) detectedType = 'empty';
+                
+                analysis[header] = { 
+                    type: detectedType, 
+                    uniqueCount: uniqueValues.size,
+                    hasNulls: types.empty > 0
+                };
+            });
+            return analysis;
+        }
+
+        function displayDataPreview(data, headers) {
+            // ... (no changes from before)
+            if (!data || !data.length || !headers || !headers.length) {
+                dataPreviewContainer.style.display = 'none'; return;
+            }
+            let headHTML = '<thead><tr>' + headers.map(h => `<th>${h} (${columnAnalysis[h]?.type || 'N/A'})</th>`).join('') + '</tr></thead>';
+            let bodyHTML = '<tbody>';
+            data.slice(0, 5).forEach(row => {
+                bodyHTML += '<tr>' + headers.map(col => `<td>${row[col] instanceof Date ? row[col].toLocaleDateString() : (row[col] ?? '')}</td>`).join('') + '</tr>';
+            });
+            bodyHTML += '</tbody>';
+            dataPreviewTable.innerHTML = headHTML + bodyHTML;
+            dataPreviewContainer.style.display = 'block';
+        }
+        
+        function generateAndDisplaySuggestedCharts() {
+            if (!parsedData || !parsedData.length) { showError('No data available for auto charts.'); return; }
+            loadingEl.style.display = 'block';
+            // Clear only suggested charts or all? For now, let's clear all if regenerating.
+            // If we want to keep custom charts, we need a way to distinguish them.
+            // For simplicity, clicking "Generate Auto Charts" will clear everything and make new suggestions.
+            clearCharts(); 
+            
+            setTimeout(() => {
+                try {
+                    const suggestions = suggestCharts(parsedData, originalHeaders, columnAnalysis);
+                    if (!suggestions.length) {
+                        showError('Could not automatically suggest charts for this dataset. Try the Custom Chart Creator or check data quality.');
+                    } else {
+                        suggestions.forEach(s => createAndRenderChart(s));
+                        if (suggestions.length > 0) chartsContainer.scrollIntoView({ behavior: 'smooth' });
+                    }
+                } catch (error) {
+                    console.error("Chart generation error:", error);
+                    showError(`Error generating suggested charts: ${error.message}.`);
+                } finally {
+                    loadingEl.style.display = 'none';
+                }
+            }, 100);
+        }
+
+        function suggestCharts(data, headers, colAnalysis) {
+            // ... (no changes from before)
+            const suggestions = [];
+            const numericCols = headers.filter(h => colAnalysis[h]?.type === 'number');
+            const dateCols = headers.filter(h => colAnalysis[h]?.type === 'date');
+            const categoryCols = headers.filter(h => colAnalysis[h]?.type === 'category' || (colAnalysis[h]?.type === 'string' && colAnalysis[h]?.uniqueCount < 20 && colAnalysis[h]?.uniqueCount > 1) || colAnalysis[h]?.type === 'boolean');
+            
+            if (dateCols.length > 0 && numericCols.length > 0) {
+                const dateCol = dateCols[0];
+                numericCols.slice(0, 2).forEach(numCol => {
+                    const chartData = data.map(r => ({ x: r[dateCol], y: r[numCol] })).filter(r => r.x instanceof Date && !isNaN(r.x.getTime()) && r.y != null && !isNaN(r.y));
+                    if (chartData.length > 1) {
+                       suggestions.push({ type: 'line', title: `${numCol} over ${dateCol}`, xAxis: dateCol, yAxis: numCol, data: chartData.sort((a,b) => a.x.getTime() - b.x.getTime()), timeSeries: true, explanation: `Trend of ${numCol} over time.` });
+                    }
+                });
+            }
+
+            if (categoryCols.length > 0 && numericCols.length > 0) {
+                const catCol = categoryCols[0]; 
+                numericCols.slice(0, 1).forEach(numCol => {
+                    const aggData = aggregateData(data, catCol, numCol, 'sum');
+                    if (aggData.length > 1 && aggData.length < 20) { 
+                        suggestions.push({ type: 'bar', title: `Sum of ${numCol} by ${catCol}`, xAxis: catCol, yAxis: numCol, data: aggData, explanation: `Total ${numCol} for each ${catCol}.` });
+                    }
+                });
+            }
+            
+            if (categoryCols.length > 0 && numericCols.length > 0) {
+                const catCol = categoryCols[0];
+                const numCol = numericCols[0]; 
+                const aggData = aggregateData(data, catCol, numCol, 'sum').filter(d => d[numCol] > 0);
+                 if (aggData.length > 1 && aggData.length <= 10) { 
+                    suggestions.push({ type: 'pie', title: `Distribution of ${numCol} by ${catCol}`, dimension: catCol, metric: numCol, data: aggData, explanation: `${numCol} distribution across ${catCol}.` });
+                }
+            }
+            
+            if (categoryCols.length > 0) {
+                categoryCols.slice(0,1).forEach(catCol => {
+                    const counts = aggregateData(data, catCol, null, 'count');
+                     if (counts.length > 1 && counts.length < 20) {
+                         suggestions.push({ type: 'bar', title: `Count of Records by ${catCol}`, xAxis: catCol, yAxis: 'Count', data: counts.map(c => ({[catCol]: c[catCol], Count: c.value }) ), explanation: `Number of records for each ${catCol}.` });
+                     }
+                });
+            }
+            return suggestions.slice(0, 6);
+        }
+
+        function aggregateData(data, groupBy, metric, aggFunction = 'sum') {
+            const agg = new Map();
+            data.forEach(row => {
+                const key = row[groupBy];
+                // Allow 0 as a key, but skip null/undefined/empty string keys
+                if (key === null || key === undefined || (typeof key === 'string' && key.trim() === "")) return;
+
+                let value;
+                if (aggFunction === 'count') {
+                    value = 1; // For count, we just need to increment. Metric is not used for value.
+                } else {
+                    value = row[metric];
+                    if (value === null || value === undefined || (typeof value === 'number' && isNaN(value)) ) return; // Skip if metric value invalid for sum/avg
+                    value = Number(value); // Ensure numeric for sum/avg
+                    if (isNaN(value)) return; // Skip if conversion failed
+                }
+                
+                const current = agg.get(key);
+                switch (aggFunction) {
+                    case 'sum':
+                        agg.set(key, (current || 0) + value);
+                        break;
+                    case 'count':
+                        agg.set(key, (current || 0) + 1);
+                        break;
+                    case 'average':
+                        const currentAvgData = current || { sum: 0, count: 0 };
+                        agg.set(key, {
+                            sum: currentAvgData.sum + value,
+                            count: currentAvgData.count + 1
+                        });
+                        break;
+                    default: 
+                        agg.set(key, (current || 0) + value);
+                }
+            });
+            
+            let result;
+            if (aggFunction === 'average') {
+                result = Array.from(agg, ([k, v]) => ({ 
+                    [groupBy]: k, 
+                    [metric]: v.count > 0 ? v.sum / v.count : 0 // Use original metric name as key
+                }));
+            } else if (aggFunction === 'count') {
+                 result = Array.from(agg, ([k, v]) => ({ [groupBy]: k, value: v })); // 'value' key for count
+            } else { // sum
+                result = Array.from(agg, ([k, v]) => ({ [groupBy]: k, [metric]: v })); // Use original metric name as key
+            }
+            
+            const sortKey = aggFunction === 'count' ? 'value' : metric;
+            result.sort((a, b) => b[sortKey] - a[sortKey]);
+            return result;
+        }
+        
+        function createAndRenderChart(config) {
+            // ... (Ensure unique chartIdBase logic if charts can be added without full clear)
+            const chartIdBase = `chart-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+            const chartCard = document.createElement('div');
+            chartCard.className = 'chart-card';
+            chartCard.dataset.chartInstanceId = chartIdBase; 
+
+            chartCard.innerHTML = `
+                <div class="chart-header">
+                    <h3 class="chart-title">${config.title}</h3>
+                    <div class="chart-controls">
+                        <button class="btn btn-small fullscreen-btn" data-chart-instance-id="${chartIdBase}">Fullscreen</button>
+                        <button class="btn btn-small export-btn" data-chart-canvas-id="${chartIdBase}-canvas">Export PNG</button>
+                    </div>
+                </div>
+                <div class="chart-container"><canvas id="${chartIdBase}-canvas"></canvas></div>
+                <div class="chart-explanation">${config.explanation || ''}</div>`;
+            chartsContainer.appendChild(chartCard);
+            
+            chartCard.querySelector('.export-btn').addEventListener('click', function() { exportChartToPNG(this.dataset.chartCanvasId); });
+            chartCard.querySelector('.fullscreen-btn').addEventListener('click', function() { toggleChartFullscreen(this.dataset.chartInstanceId); });
+            
+            const ctx = document.getElementById(`${chartIdBase}-canvas`).getContext('2d');
+            const isDark = document.body.classList.contains('dark-theme');
+            const baseTickColor = isDark ? 'rgb(203, 213, 225)' : '#666';
+
+            const commonOptions = {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    title: { display: true, text: config.title, color: isDark ? 'rgb(226, 232, 240)' : '#333' },
+                    legend: { labels: { color: isDark ? 'rgb(203, 213, 225)' : '#333' } },
+                    zoom: { pan: { enabled: true, mode: 'xy' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' } }
+                }
+            };
+            
+            let chartInstance;
+            switch (config.type) {
+                case 'bar': chartInstance = createBarChart(ctx, config, commonOptions, baseTickColor); break;
+                case 'line': chartInstance = createLineChart(ctx, config, commonOptions, baseTickColor); break;
+                case 'pie': 
+                    const pieOpts = JSON.parse(JSON.stringify(commonOptions)); delete pieOpts.plugins.zoom;
+                    chartInstance = createPieChart(ctx, config, pieOpts); break;
+                case 'scatter': chartInstance = createScatterChart(ctx, config, commonOptions, baseTickColor); break;
+                default: console.error('Unsupported chart type:', config.type); return;
+            }
+            if (chartInstance) {
+                chartInstance.chartInstanceId = chartIdBase; 
+                activeCharts.push(chartInstance);
+            }
+        }
+
+        function createBarChart(ctx, config, commonOptions, tickColor) {
+            const isDark = document.body.classList.contains('dark-theme');
+            const style = {
+                bgColor: isDark ? 'rgba(0, 170, 255, 0.7)' : 'rgba(54, 162, 235, 0.7)',
+                borderColor: isDark ? 'rgba(0, 170, 255, 1)' : 'rgba(54, 162, 235, 1)',
+                tickColor: isDark ? 'rgb(203, 213, 225)' : tickColor
+            };
+            const yDataKey = config.yDataKey || config.yAxis; // For custom charts
+            const yAxisLabel = config.yAxisDisplayTitle || config.yAxis; // For custom charts title
+
+            return new Chart(ctx, { type: 'bar',
+                data: { 
+                    labels: config.data.map(item => String(item[config.xAxis])),
+                    datasets: [{ 
+                        label: config.datasetLabel || yAxisLabel, // Use datasetLabel from custom or yAxisLabel
+                        data: config.data.map(item => item[yDataKey]), 
+                        backgroundColor: style.bgColor, borderColor: style.borderColor, borderWidth: 1 
+                    }]
+                },
+                options: { ...commonOptions, scales: {
+                    y: { beginAtZero: true, title: { display: true, text: yAxisLabel, color: style.tickColor }, ticks: { color: style.tickColor } },
+                    x: { title: { display: true, text: config.xAxis, color: style.tickColor }, ticks: { color: style.tickColor, autoSkip: true, maxRotation: 45, minRotation: 0 } }
+                }}
+            });
+        }
+        
+        function createLineChart(ctx, config, commonOptions, baseTickColor) {
+            const isDark = document.body.classList.contains('dark-theme');
+            const style = {
+                lineColor: isDark ? 'rgb(59, 130, 246)' : 'rgb(0, 123, 255)',
+                pointBorderColor: isDark ? 'rgb(255, 255, 255)' : (isDark ? 'rgb(59, 130, 246)' : 'rgb(0, 123, 255)'),
+                tickColor: isDark ? 'rgb(203, 213, 225)' : baseTickColor,
+                gridColor: isDark ? 'rgba(100, 116, 139, 0.25)' : 'rgba(0, 0, 0, 0.1)',
+                fillBgColor: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(0, 123, 255, 0.2)'
+            };
+             if (isDark && commonOptions.plugins.title) commonOptions.plugins.title.color = 'rgb(226, 232, 240)';
+             if (isDark && commonOptions.plugins.legend?.labels) commonOptions.plugins.legend.labels.color = style.tickColor;
+
+            let xScaleConfig;
+            let chartDataValues;
+            let datasetLabel = config.datasetLabel || config.yAxis; 
+            let yAxisTitle = config.yAxis; // This is the display name from config.yAxis
+            let xDataKey = config.xAxis;    // This is the data key from config.xAxis
+            let yDataKey = config.yDataKey || config.yAxis; // For custom charts, actual data key
+
+            if (config.timeSeries) { 
+                // Data is already [{x,y}] where x is Date and y is value. config.xAxis is title, config.yAxis is title
+                chartDataValues = config.data; 
+                xScaleConfig = {
+                    type: 'time',
+                    time: { unit: 'day', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { day: 'MMM d' }}, 
+                    title: { display: true, text: config.xAxis, color: style.tickColor }, 
+                    ticks: { color: style.tickColor, autoSkip: true, maxTicksLimit: isDark ? 8 : 12, maxRotation: 0 },
+                    grid: { display: !isDark, color: style.gridColor }
+                };
+            } else { 
+                // Categorical X: config.xAxis is data key for X, yDataKey is data key for Y. config.yAxis is display title for Y.
+                chartDataValues = config.data.map(item => item[yDataKey]); 
+                xScaleConfig = {
+                    type: 'category',
+                    labels: config.data.map(item => String(item[xDataKey])),
+                    title: { display: true, text: xDataKey, color: style.tickColor },
+                    ticks: { color: style.tickColor, autoSkip: true, maxRotation: 0 },
+                    grid: { display: !isDark, color: style.gridColor }
+                };
+            }
+            
+            return new Chart(ctx, { type: 'line',
+                data: {
+                    ...(config.timeSeries ? {} : { labels: xScaleConfig.labels }),
+                    datasets: [{
+                        label: datasetLabel, data: chartDataValues,
+                        fill: true, backgroundColor: style.fillBgColor, borderColor: style.lineColor, borderWidth: 2, tension: 0.3, 
+                        pointBackgroundColor: style.lineColor, pointBorderColor: style.pointBorderColor,
+                        pointRadius: isDark ? 3 : 4, pointHoverRadius: isDark ? 5 : 6, pointBorderWidth: 1.5
+                    }]
+                },
+                options: { ...commonOptions, scales: { 
+                        y: { beginAtZero: false, title: { display: true, text: yAxisTitle, color: style.tickColor }, ticks: { color: style.tickColor, precision: 0 }, grid: { color: style.gridColor, drawBorder: false } }, 
+                        x: xScaleConfig 
+                    },
+                    interaction: { mode: 'index', intersect: false }
+                }
+            });
+        }
+        
+        function createPieChart(ctx, config, commonOptions) {
+            // ... (no changes from before, uses config.dimension and config.metric as keys)
+            const isDark = document.body.classList.contains('dark-theme');
+             if (isDark && commonOptions.plugins.title) commonOptions.plugins.title.color = 'rgb(226, 232, 240)';
+             if (isDark && commonOptions.plugins.legend?.labels) commonOptions.plugins.legend.labels.color = 'rgb(203, 213, 225)';
+
+            return new Chart(ctx, { type: 'pie',
+                data: { 
+                    labels: config.data.map(item => String(item[config.dimension])),
+                    datasets: [{ 
+                        data: config.data.map(item => item[config.metric]), 
+                        backgroundColor: generateColors(config.data.length, isDark), 
+                        borderColor: isDark ? '#0a0a0a' : '#fff', borderWidth: 1 
+                    }]
+                },
+                options: { ...commonOptions, plugins: { ...commonOptions.plugins, 
+                    tooltip: { 
+                        backgroundColor: isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(0,0,0,0.85)',
+                        titleColor: isDark ? 'rgb(226, 232, 240)' : '#fff',
+                        bodyColor: isDark ? 'rgb(203, 213, 225)' : '#fff',
+                        callbacks: { label: (c) => `${c.label||''}: ${c.raw.toLocaleString()} (${((c.raw/c.chart.getDatasetMeta(0).total)*100).toFixed(1)}%)` }
+                    }
+                }}
+            });
+        }
+
+        function createScatterChart(ctx, config, commonOptions, baseTickColor) {
+            const isDark = document.body.classList.contains('dark-theme');
+            const style = {
+                pointColor: isDark ? 'rgba(0, 170, 255, 0.7)' : 'rgba(54, 162, 235, 0.7)',
+                tickColor: isDark ? 'rgb(203, 213, 225)' : baseTickColor,
+                gridColor: isDark ? 'rgba(100, 116, 139, 0.25)' : 'rgba(0, 0, 0, 0.1)',
+            };
+            if (isDark && commonOptions.plugins.title) commonOptions.plugins.title.color = 'rgb(226, 232, 240)';
+            if (isDark && commonOptions.plugins.legend?.labels) commonOptions.plugins.legend.labels.color = style.tickColor;
+
+            const xDataKey = config.xDataKey || config.xAxis;
+            const yDataKey = config.yDataKey || config.yAxis;
+            const xAxisTitle = config.xAxis; // Display title from config.xAxis
+            const yAxisTitle = config.yAxisLabelForChart || config.yAxis; // Display title for Y
+
+            return new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: `${yAxisTitle} vs ${xAxisTitle}`,
+                        data: config.data.map(item => ({ x: item[xDataKey], y: item[yDataKey] })).filter(p => p.x != null && p.y != null && !isNaN(p.x) && !isNaN(p.y)),
+                        backgroundColor: style.pointColor
+                    }]
+                },
+                options: {
+                    ...commonOptions,
+                    scales: {
+                        x: {
+                            type: columnAnalysis[xDataKey]?.type === 'date' ? 'time' : 'linear', 
+                            position: 'bottom',
+                            title: { display: true, text: xAxisTitle, color: style.tickColor },
+                            ticks: { color: style.tickColor },
+                            grid: { color: style.gridColor },
+                            ...(columnAnalysis[xDataKey]?.type === 'date' && { time: { unit: 'day', tooltipFormat: 'MMM d, yyyy HH:mm' }})
+                        },
+                        y: {
+                            title: { display: true, text: yAxisTitle, color: style.tickColor },
+                            ticks: { color: style.tickColor },
+                            grid: { color: style.gridColor }
+                        }
+                    }
+                }
+            });
+        }
+                
+        function generateColors(count, isDark) {
+            // ... (no changes from before)
+            const baseL = ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#ff9f40','#c9cbcf','#4caf50','#ff7043','#7e57c2'];
+            const baseD = ['#00aaff','#00ddbb','#ffcc00','#ff6699','#9988ff','#ff9933','#bbbbbb','#66cc66','#ff8c66','#aa80ff'];
+            const base = isDark ? baseD : baseL;
+            return Array.from({length: count}, (_, i) => base[i % base.length]);
+        }
+        
+        function exportChartToPNG(chartCanvasId) {
+            const chartInstance = activeCharts.find(c => c.canvas.id === chartCanvasId);
+            if (!chartInstance) {
+                console.error("Chart not found for PNG export:", chartCanvasId);
+                showError("Chart not found to export.");
+                return;
+            }
+
+            const canvas = chartInstance.canvas;
+            if (!canvas) {
+                showError("Chart canvas element not found.");
+                return;
+            }
+
+            try {
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+
+                const isDark = document.body.classList.contains('dark-theme');
+                let bgColor = '#ffffff'; // Default light theme background
+
+                // Try to get the actual background color of the chart card
+                const chartCard = document.querySelector(`.chart-card[data-chart-instance-id="${chartInstance.chartInstanceId}"]`);
+                if (chartCard) {
+                    bgColor = getComputedStyle(chartCard).backgroundColor;
+                } else {
+                    // Fallback if chartCard element not found (shouldn't happen in normal flow)
+                    bgColor = isDark ? getComputedStyle(document.documentElement).getPropertyValue('--white-bg').trim() : '#ffffff';
+                }
+                
+                // Ensure bgColor is a valid color, not transparent or unset
+                if (!bgColor || bgColor === 'transparent' || bgColor === 'rgba(0, 0, 0, 0)') {
+                    bgColor = isDark ? (getComputedStyle(document.documentElement).getPropertyValue('--white-bg').trim() || '#0a0a0a') : '#ffffff';
+                }
+                if (!bgColor || bgColor === 'transparent' || bgColor === 'rgba(0, 0, 0, 0)') { // Final fallback
+                    bgColor = isDark ? '#0a0a0a' : '#ffffff';
+                }
+
+
+                tempCtx.fillStyle = bgColor;
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.drawImage(canvas, 0, 0);
+
+                const dataURL = tempCanvas.toDataURL('image/png');
+
+                if (dataURL && dataURL.length > 'data:image/png;base64,'.length) {
+                    const a = document.createElement('a');
+                    a.download = `${(chartInstance.options.plugins.title.text || chartCanvasId).replace(/\W/g, '_')}.png`;
+                    a.href = dataURL;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    hideError();
+                } else {
+                    showError("Failed to generate PNG: empty content.");
+                }
+            } catch (e) {
+                console.error("PNG export error:", e);
+                showError(`PNG Export Error: ${e.message}`);
+            }
+        }
+        
+        function toggleChartFullscreen(chartInstanceId, forceState) { /* ... (no changes from before) ... */  
+            const chartInstance = activeCharts.find(c => c.chartInstanceId === chartInstanceId);
+            const chartCard = document.querySelector(`.chart-card[data-chart-instance-id="${chartInstanceId}"]`);
+            if (!chartCard || !chartInstance) return;
+            const isFs = chartCard.classList.contains('fullscreen-mode');
+            const targetFs = (forceState !== undefined) ? forceState : !isFs;
+            chartCard.classList.toggle('fullscreen-mode', targetFs);
+            document.body.classList.toggle('fullscreen-active', targetFs);
+            chartCard.querySelector('.fullscreen-btn').textContent = targetFs ? "Exit Fullscreen" : "Fullscreen";
+            setTimeout(() => chartInstance.resize(), 50); // Ensure resize happens after DOM updates
+        }
+
+        function clearPreviousState() {
+            clearCharts();
+            hideError();
+            parsedData = null; originalHeaders = []; columnAnalysis = {};
+            fileInfo.style.display = 'none';
+            dataPreviewContainer.style.display = 'none';
+            analysisActionsEl.style.display = 'none'; // Hide analysis/custom chart section
+            dataPreviewTable.innerHTML = '';
+            customXAxisSelect.innerHTML = ''; // Clear custom chart dropdowns
+            customYAxisSelect.innerHTML = '';
+        }
+        function clearCharts() { activeCharts.forEach(c => c.destroy()); activeCharts = []; chartsContainer.innerHTML = ''; document.body.classList.remove('fullscreen-active'); }
+        function formatFileSize(b) { const k=1024,s=['B','KB','MB','GB'],i=Math.floor(Math.log(b)/Math.log(k)); return parseFloat((b/Math.pow(k,i)).toFixed(2))+' '+s[i];}
+        function showError(m) { errorMessageEl.textContent=m; errorMessageEl.style.display='block'; loadingEl.style.display='none'; }
+        function hideError() { errorMessageEl.style.display='none'; }
+        
+        function toggleTheme() {
+            document.body.classList.toggle('dark-theme');
+            themeToggle.textContent = document.body.classList.contains('dark-theme') ? 'Light Mode' : 'Dark Mode';
+            updateGlobalChartDefaults(document.body.classList.contains('dark-theme'));
+            // Re-render all active charts with the new theme
+            // This requires storing their configurations or re-running generation logic.
+            // For simplicity, if data exists, we re-trigger auto-charts (which clears existing ones).
+            // Custom charts would be lost. A more robust solution would re-create each chart.
+            // For now, let's just update defaults. If users want themed charts, they can re-generate.
+            if (activeCharts.length > 0 && parsedData) {
+                // A simple approach: re-run suggested charts and clear custom ones.
+                // Or, try to update existing charts (more complex)
+                // generateAndDisplaySuggestedCharts(); // This clears all, including custom.
+                // To preserve and re-theme existing charts:
+                activeCharts.forEach(chart => {
+                    const isDarkTheme = document.body.classList.contains('dark-theme');
+                    chart.options.plugins.title.color = isDarkTheme ? 'rgb(226, 232, 240)' : '#333';
+                    chart.options.plugins.legend.labels.color = isDarkTheme ? 'rgb(203, 213, 225)' : '#333';
+                    if (chart.options.scales) {
+                        Object.values(chart.options.scales).forEach(axis => {
+                            if(axis.title) axis.title.color = isDarkTheme ? 'rgb(203, 213, 225)' : '#666';
+                            if(axis.ticks) axis.ticks.color = isDarkTheme ? 'rgb(203, 213, 225)' : '#666';
+                            if(axis.grid) axis.grid.color = isDarkTheme ? 'rgba(100, 116, 139, 0.25)' : 'rgba(0, 0, 0, 0.1)';
+                        });
+                    }
+                    // Update dataset colors - more complex as they vary by chart type and original config
+                    // For now, this basic update will handle text and grid lines.
+                    // Full re-theming might require re-creating chart from config.
+                    // e.g., for bar chart background:
+                    if (chart.config.type === 'bar' && chart.data.datasets.length > 0) {
+                        chart.data.datasets[0].backgroundColor = isDarkTheme ? 'rgba(0, 170, 255, 0.7)' : 'rgba(54, 162, 235, 0.7)';
+                        chart.data.datasets[0].borderColor = isDarkTheme ? 'rgba(0, 170, 255, 1)' : 'rgba(54, 162, 235, 1)';
+                    }
+                    // e.g., for line chart colors:
+                    if (chart.config.type === 'line' && chart.data.datasets.length > 0) {
+                        const ds = chart.data.datasets[0];
+                        ds.borderColor = isDarkTheme ? 'rgb(59, 130, 246)' : 'rgb(0, 123, 255)';
+                        ds.backgroundColor = isDarkTheme ? 'rgba(59, 130, 246, 0.2)' : 'rgba(0, 123, 255, 0.2)';
+                        ds.pointBackgroundColor = ds.borderColor;
+                        ds.pointBorderColor = isDarkTheme ? 'rgb(255, 255, 255)' : ds.borderColor;
+
+                    }
+                    // e.g., for pie chart colors:
+                    if (chart.config.type === 'pie' && chart.data.datasets.length > 0) {
+                        chart.data.datasets[0].backgroundColor = generateColors(chart.data.labels.length, isDarkTheme);
+                        chart.data.datasets[0].borderColor = isDarkTheme ? '#0a0a0a' : '#fff';
+                    }
+                    // e.g., for scatter chart point color
+                    if (chart.config.type === 'scatter' && chart.data.datasets.length > 0) {
+                        chart.data.datasets[0].backgroundColor = isDarkTheme ? 'rgba(0, 170, 255, 0.7)' : 'rgba(54, 162, 235, 0.7)';
+                    }
+
+
+                    chart.update();
+                });
+            }
+        }
+        
+        function updateGlobalChartDefaults(isDark) {
+            Chart.defaults.color = isDark ? 'rgb(203, 213, 225)' : '#333';
+            Chart.defaults.borderColor = isDark ? 'rgba(100, 116, 139, 0.15)' : 'rgba(0,0,0,0.1)';
+        }
+        updateGlobalChartDefaults(document.body.classList.contains('dark-theme'));
+
+        // --- Custom Chart Creator Specific Functions ---
+        function populateCustomChartSelectors() {
+            customXAxisSelect.innerHTML = '';
+            customYAxisSelect.innerHTML = '';
+
+            if (!originalHeaders || originalHeaders.length === 0) return;
+
+            originalHeaders.forEach(header => {
+                const type = columnAnalysis[header]?.type || 'unknown';
+                const optionX = new Option(`${header} (${type})`, header);
+                const optionY = new Option(`${header} (${type})`, header);
+                customXAxisSelect.add(optionX);
+                customYAxisSelect.add(optionY);
+            });
+            updateCustomChartControlsUI(); 
+        }
+
+        function updateCustomChartControlsUI() {
+            const chartType = customChartTypeSelect.value;
+            const aggregationType = customAggregationSelect.value;
+
+            if (chartType === 'bar' || chartType === 'pie') {
+                aggregationControlDiv.style.display = 'block';
+                customYAxisSelect.disabled = (aggregationType === 'count');
+                customXAxisLabel.textContent = chartType === 'pie' ? "Dimension (Categorical):" : "X-Axis (Categorical):";
+                customYAxisLabel.textContent = chartType === 'pie' ? 
+                    (aggregationType === 'count' ? "Metric (Count)" : "Metric (Numeric):") :
+                    (aggregationType === 'count' ? "Y-Axis (Count)" : "Y-Axis (Numeric):");
+            } else { // line, scatter
+                aggregationControlDiv.style.display = 'none';
+                customYAxisSelect.disabled = false;
+                customXAxisLabel.textContent = "X-Axis:";
+                customYAxisLabel.textContent = "Y-Axis:";
+                 if (chartType === 'scatter') {
+                     customXAxisLabel.textContent = "X-Axis (Numeric/Date):"; // Updated for clarity
+                     customYAxisLabel.textContent = "Y-Axis (Numeric):";
+                 }
+            }
+        }
+
+        function handleCreateCustomChart() {
+            if (!parsedData) { showError("No data loaded to create a custom chart."); return; }
+
+            const chartType = customChartTypeSelect.value;
+            const xAxisColName = customXAxisSelect.value;
+            const yAxisColName = customYAxisSelect.value; 
+            const aggregationType = customAggregationSelect.value;
+
+            let chartData;
+            let effectiveYKey = yAxisColName; 
+            let yAxisTitle = yAxisColName;    
+            let xAxisTitle = xAxisColName;    
+            let datasetLabel = yAxisColName;
+
+            if (chartType === 'bar' || chartType === 'pie') {
+                const xAxisType = columnAnalysis[xAxisColName]?.type;
+                if (xAxisType !== 'string' && xAxisType !== 'category' && xAxisType !== 'boolean') {
+                    showError(`For ${chartType} charts, X-axis/Dimension (${xAxisColName}) should be categorical. Found: ${xAxisType}`);
+                    return;
+                }
+
+                if (aggregationType === 'count') {
+                    chartData = aggregateData(parsedData, xAxisColName, null, 'count');
+                    effectiveYKey = 'value'; 
+                    yAxisTitle = 'Count';
+                    datasetLabel = 'Count';
+                } else { 
+                    if (columnAnalysis[yAxisColName]?.type !== 'number') {
+                        showError(`Y-axis/Metric (${yAxisColName}) must be numeric for '${aggregationType}' aggregation. Found: ${columnAnalysis[yAxisColName]?.type}`);
+                        return;
+                    }
+                    chartData = aggregateData(parsedData, xAxisColName, yAxisColName, aggregationType);
+                    effectiveYKey = yAxisColName; 
+                    const aggLabel = aggregationType.charAt(0).toUpperCase() + aggregationType.slice(1);
+                    yAxisTitle = `${aggLabel} of ${yAxisColName}`;
+                    datasetLabel = yAxisTitle;
+                }
+            } else if (chartType === 'line' || chartType === 'scatter') {
+                const yColType = columnAnalysis[yAxisColName]?.type;
+                if (yColType !== 'number' && !(yColType === 'date' && chartType === 'scatter') ) { // Y-axis usually number, date only for scatter maybe
+                    if (yColType !== 'number') {
+                        showError(`Y-axis (${yAxisColName}) should be numeric for ${chartType}. Found: ${yColType}`);
+                        return;
+                    }
+                }
+                const xColType = columnAnalysis[xAxisColName]?.type;
+                if (chartType === 'scatter' && xColType !== 'number' && xColType !== 'date') {
+                    showError(`X-axis (${xAxisColName}) must be numeric or date for Scatter plot. Found: ${xColType}`);
+                    return;
+                }
+                 if (chartType === 'line' && xColType !== 'number' && xColType !== 'date' && xColType !== 'string' && xColType !== 'category' && xColType !== 'boolean') {
+                    showError(`X-axis (${xAxisColName}) must be numeric, date, or categorical for Line chart. Found: ${xColType}`);
+                    return;
+                }
+
+
+                chartData = parsedData.map(row => {
+                    let xVal = row[xAxisColName];
+                    let yVal = row[yAxisColName];
+                    if (xColType === 'date' && !(xVal instanceof Date) && xVal != null) {
+                        const d = new Date(xVal);
+                        if (!isNaN(d.getTime())) xVal = d; else xVal = null;
+                    }
+                    if (yColType === 'date' && !(yVal instanceof Date) && yVal != null) { // Less common for Y but possible for scatter
+                         const d = new Date(yVal);
+                         if (!isNaN(d.getTime())) yVal = d; else yVal = null;
+                    }
+                    return { [xAxisColName]: xVal, [yAxisColName]: yVal };
+                }).filter(item => item[xAxisColName] != null && item[yAxisColName] != null);
+
+
+                if (chartType === 'line' && (xColType === 'date' || xColType === 'number')) {
+                    chartData.sort((a, b) => {
+                        const valA = a[xAxisColName];
+                        const valB = b[xAxisColName];
+                        if (valA instanceof Date && valB instanceof Date) return valA.getTime() - valB.getTime();
+                        return valA - valB;
+                    });
+                }
+                effectiveYKey = yAxisColName;
+                yAxisTitle = yAxisColName;
+                datasetLabel = yAxisColName;
+            } else {
+                showError("Invalid chart type selected for custom chart."); return;
+            }
+
+            if (!chartData || chartData.length === 0) {
+                showError("No data to plot for the selected custom chart configuration."); return;
+            }
+            hideError(); 
+
+            let finalChartConfig = {
+                type: chartType,
+                title: `${datasetLabel} by ${xAxisTitle}`,
+                data: chartData,
+                explanation: `Custom chart: ${datasetLabel} by ${xAxisTitle}.`
+            };
+
+            if (chartType === 'pie') {
+                finalChartConfig.dimension = xAxisColName; 
+                finalChartConfig.metric = effectiveYKey;   
+                finalChartConfig.title = `Distribution of ${datasetLabel} by ${xAxisTitle}`;
+            } else if (chartType === 'line') {
+                if (columnAnalysis[xAxisColName]?.type === 'date') {
+                    finalChartConfig.timeSeries = true;
+                    finalChartConfig.data = chartData.map(d => ({ x: d[xAxisColName], y: d[effectiveYKey] }));
+                    finalChartConfig.xAxis = xAxisTitle; // Display title for X
+                    finalChartConfig.yAxis = yAxisTitle; // Display title for Y
+                    finalChartConfig.datasetLabel = datasetLabel;
+                } else { // Categorical or numerical X-axis (non-time-series)
+                    finalChartConfig.xAxis = xAxisColName;    // Data key for X
+                    finalChartConfig.yDataKey = effectiveYKey; // Data key for Y
+                    finalChartConfig.yAxis = yAxisTitle;       // Display title for Y-axis
+                    finalChartConfig.datasetLabel = datasetLabel; // Label for the dataset itself
+                }
+            } else if (chartType === 'bar') {
+                finalChartConfig.xAxis = xAxisColName;      // Data key for X categories
+                finalChartConfig.yAxis = yAxisTitle;        // Display title for Y-axis (e.g., "Sum of Sales")
+                finalChartConfig.yDataKey = effectiveYKey;  // Actual data key for Y values (e.g., "Sales" or "value")
+                finalChartConfig.datasetLabel = datasetLabel; // Label for the dataset in legend
+                // The createBarChart will use yAxis for title, and config.datasetLabel for legend.xAxis for x-axis title.
+                finalChartConfig.yAxisDisplayTitle = yAxisTitle; // Explicit for Y-axis title in createBarChart
+            } else if (chartType === 'scatter') {
+                finalChartConfig.xDataKey = xAxisColName;     // Data key for X
+                finalChartConfig.yDataKey = effectiveYKey;    // Data key for Y
+                finalChartConfig.xAxis = xAxisTitle;          // Display title for X-axis
+                finalChartConfig.yAxis = yAxisTitle;          // Display title for Y-axis
+                finalChartConfig.yAxisLabelForChart = yAxisTitle; // For createScatterChart specific y-axis title
+                finalChartConfig.title = `${yAxisTitle} vs ${xAxisTitle}`;
+            }
+            
+            createAndRenderChart(finalChartConfig);
+        }
+
+
+    </script>
+</body>  
+</html>
